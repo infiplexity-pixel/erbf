@@ -8,15 +8,18 @@ from typing import Tuple
 
 import numpy as np
 
+from typing import Tuple
+import numpy as np
+import torch
+from torchvision import datasets, transforms
+
 
 def load_mnist_subset(
     n_train: int = 200,
     n_test: int = 200,
     seed: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Load a random subset of MNIST, normalised to [0, 1].
-
-    Tries TensorFlow first, falls back to sklearn's ``fetch_openml``.
+    """Load a random subset of MNIST using torchvision, normalised to [0, 1].
 
     Parameters
     ----------
@@ -31,24 +34,46 @@ def load_mnist_subset(
     X_test : ndarray of shape (n_test, 784)
     y_test : ndarray of shape (n_test,)
     """
+
     rng = np.random.RandomState(seed)
 
-    try:
-        from tensorflow.keras.datasets import mnist as tf_mnist
-        (X_full, y_full), _ = tf_mnist.load_data()
-        X_full = X_full.reshape(-1, 784).astype(np.float32) / 255.0
-        y_full = y_full.astype(np.int32)
-    except Exception:
-        from sklearn.datasets import fetch_openml
-        data = fetch_openml("mnist_784", version=1, parser="auto")
-        X_full = np.array(data.data, dtype=np.float32) / 255.0
-        y_full = np.array(data.target, dtype=np.int32)
+    transform = transforms.ToTensor()  # Converts to [0,1] float32 tensor
 
-    idx = rng.permutation(len(X_full))[: n_train + n_test]
-    X_train = X_full[idx[:n_train]]
-    y_train = y_full[idx[:n_train]]
-    X_test = X_full[idx[n_train:]]
-    y_test = y_full[idx[n_train:]]
+    # Download/load datasets
+    train_dataset = datasets.MNIST(
+        root="./data",
+        train=True,
+        download=True,
+        transform=transform,
+    )
+
+    test_dataset = datasets.MNIST(
+        root="./data",
+        train=False,
+        download=True,
+        transform=transform,
+    )
+
+    # Convert full datasets to tensors
+    X_train_full = train_dataset.data.float() / 255.0
+    y_train_full = train_dataset.targets
+
+    X_test_full = test_dataset.data.float() / 255.0
+    y_test_full = test_dataset.targets
+
+    # Flatten to (N, 784)
+    X_train_full = X_train_full.view(-1, 784)
+    X_test_full = X_test_full.view(-1, 784)
+
+    # Random subset selection
+    train_idx = rng.permutation(len(X_train_full))[:n_train]
+    test_idx = rng.permutation(len(X_test_full))[:n_test]
+
+    X_train = X_train_full[train_idx].numpy()
+    y_train = y_train_full[train_idx].numpy()
+
+    X_test = X_test_full[test_idx].numpy()
+    y_test = y_test_full[test_idx].numpy()
 
     return X_train, y_train, X_test, y_test
 
