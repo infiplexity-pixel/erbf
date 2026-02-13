@@ -26,7 +26,7 @@ pip install erbf
 ### From source
 
 ```bash
-git clone https://github.com/erbf-contributors/erbf.git
+git clone https://github.com/infiplexity-pixel/erbf.git
 cd erbf
 pip install -e .
 ```
