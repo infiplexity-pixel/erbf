@@ -7,8 +7,6 @@ with zero residual (up to floating-point precision).
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from scipy.linalg import solve
 
@@ -67,7 +65,7 @@ class ERBFRegressor:
 
     def __init__(
         self,
-        k_neighbors: Optional[int] = None,
+        k_neighbors: int | None = None,
         k_multiplier: float = 1.5,
         k_minimum: int = 10,
         min_sigma: float = 0.5,
@@ -91,14 +89,14 @@ class ERBFRegressor:
         self.show_progress = show_progress
         self.verbose = verbose
 
-        self.X_train_: Optional[np.ndarray] = None
-        self.weights_: Optional[np.ndarray] = None
-        self.sigmas_: Optional[np.ndarray] = None
-        self.K_train_: Optional[np.ndarray] = None
+        self.X_train_: np.ndarray | None = None
+        self.weights_: np.ndarray | None = None
+        self.sigmas_: np.ndarray | None = None
+        self.K_train_: np.ndarray | None = None
         self.condition_number_: float = 0.0
         self._multi_target: bool = False
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "ERBFRegressor":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> ERBFRegressor:
         """Fit the ERBF regressor.
 
         Parameters
@@ -117,7 +115,6 @@ class ERBFRegressor:
             y = y[:, None]
 
         self.X_train_ = X
-        N = X.shape[0]
 
         self.sigmas_ = compute_local_sigmas(
             X,
@@ -204,7 +201,7 @@ class ERBFRegressor:
             "verbose": self.verbose,
         }
 
-    def set_params(self, **params) -> "ERBFRegressor":
+    def set_params(self, **params) -> ERBFRegressor:
         for key, value in params.items():
             if not hasattr(self, key):
                 raise ValueError(f"Invalid parameter '{key}'")

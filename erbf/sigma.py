@@ -18,8 +18,6 @@ captures local density) against stability (large k smooths the kernel).
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from scipy.spatial.distance import cdist
 
@@ -55,7 +53,7 @@ def auto_select_k(N: int, *, multiplier: float = 1.5, minimum: int = 10) -> int:
 
 def compute_local_sigmas(
     X: np.ndarray,
-    k_neighbors: Optional[int] = None,
+    k_neighbors: int | None = None,
     *,
     k_multiplier: float = 1.5,
     k_minimum: int = 10,
@@ -116,21 +114,21 @@ def compute_local_sigmas(
         )
 
     sigmas = np.zeros(N, dtype=np.float64)
-    
+
     # Process in chunks to keep memory constant
     n_chunks = (N + chunk_size - 1) // chunk_size
     chunk_iter = range(n_chunks)
     if show_progress:
         chunk_iter = tqdm(chunk_iter, desc="Computing σ", unit="chunk")
-    
+
     for chunk_idx in chunk_iter:
         start = chunk_idx * chunk_size
         end = min(start + chunk_size, N)
         X_chunk = X[start:end]
-        
+
         # Compute distances from chunk to all points
         D_chunk = cdist(X_chunk, X, metric=metric)  # shape: (chunk_size, N)
-        
+
         for i, global_i in enumerate(range(start, end)):
             row = D_chunk[i].copy()
             row[global_i] = np.inf  # exclude self
@@ -174,7 +172,7 @@ def compute_global_sigma(
     sigma : float
     """
     N = X.shape[0]
-    
+
     # For small datasets, use the simple approach
     if N <= chunk_size:
         D = cdist(X, X, metric=metric)
@@ -187,19 +185,19 @@ def compute_global_sigma(
             return float(np.nanmax(D))
         else:
             raise ValueError(f"Unknown method '{method}'; use 'median', 'mean', or 'max'")
-    
+
     # For large datasets, use chunked computation
     # For median: collect all distances (still memory-heavy, but unavoidable for exact median)
     # For mean: use running stats
     # For max: track running max
-    
+
     if method == "max":
         running_max = 0.0
         n_chunks = (N + chunk_size - 1) // chunk_size
         chunk_iter = range(n_chunks)
         if show_progress:
             chunk_iter = tqdm(chunk_iter, desc="Computing global σ", unit="chunk")
-        
+
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
@@ -210,7 +208,7 @@ def compute_global_sigma(
             chunk_max = D_chunk.max()
             running_max = max(running_max, chunk_max)
         return float(running_max)
-    
+
     elif method == "mean":
         running_sum = 0.0
         count = 0
@@ -218,7 +216,7 @@ def compute_global_sigma(
         chunk_iter = range(n_chunks)
         if show_progress:
             chunk_iter = tqdm(chunk_iter, desc="Computing global σ", unit="chunk")
-        
+
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
@@ -229,7 +227,7 @@ def compute_global_sigma(
             running_sum += np.nansum(D_chunk)
             count += np.sum(~np.isnan(D_chunk))
         return float(running_sum / count)
-    
+
     elif method == "median":
         # For median, we need to use reservoir sampling or approximate methods
         # For now, compute chunked and collect upper triangle values
@@ -238,7 +236,7 @@ def compute_global_sigma(
         chunk_iter = range(n_chunks)
         if show_progress:
             chunk_iter = tqdm(chunk_iter, desc="Computing global σ", unit="chunk")
-        
+
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
@@ -251,6 +249,6 @@ def compute_global_sigma(
             valid = D_chunk[~np.isnan(D_chunk)]
             all_dists.extend(valid.tolist())
         return float(np.median(all_dists))
-    
+
     else:
         raise ValueError(f"Unknown method '{method}'; use 'median', 'mean', or 'max'")

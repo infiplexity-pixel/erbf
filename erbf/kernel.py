@@ -15,7 +15,6 @@ Supported Kernels:
 from __future__ import annotations
 
 import abc
-from typing import Optional
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -74,7 +73,7 @@ class BaseKernel(abc.ABC):
         X: np.ndarray,
         Y: np.ndarray,
         sigmas_X: np.ndarray,
-        sigmas_Y: Optional[np.ndarray] = None,
+        sigmas_Y: np.ndarray | None = None,
         *,
         symmetric: bool = False,
     ) -> np.ndarray:
@@ -103,7 +102,6 @@ class BaseKernel(abc.ABC):
             sigmas_Y = sigmas_X
 
         n = X.shape[0]
-        m = Y.shape[0]
 
         D = cdist(X, Y)
         D_P = D ** self.P
@@ -209,7 +207,7 @@ def build_kernel_matrix(
     X: np.ndarray,
     Y: np.ndarray,
     sigmas_X: np.ndarray,
-    sigmas_Y: Optional[np.ndarray] = None,
+    sigmas_Y: np.ndarray | None = None,
     *,
     kernel: str | BaseKernel = "gaussian",
     P: int = 2,
@@ -322,8 +320,7 @@ def chunked_kernel_matmul(
         raise TypeError(f"kernel must be str or BaseKernel, got {type(kernel)}")
 
     n_query = X.shape[0]
-    n_train = Y.shape[0]
-    
+
     # Handle weights shape
     weights = np.asarray(weights)
     if weights.ndim == 1:
@@ -332,28 +329,28 @@ def chunked_kernel_matmul(
     else:
         squeeze_output = False
     n_classes = weights.shape[0]
-    
+
     # Pre-allocate output
     result = np.zeros((n_query, n_classes), dtype=np.float64)
-    
+
     # Process in chunks
     n_chunks = (n_query + chunk_size - 1) // chunk_size
     chunk_iter = range(n_chunks)
     if show_progress:
-        chunk_iter = tqdm(chunk_iter, desc="Predicting", unit="chunk", 
+        chunk_iter = tqdm(chunk_iter, desc="Predicting", unit="chunk",
                          total=n_chunks)
-    
+
     for chunk_idx in chunk_iter:
         start = chunk_idx * chunk_size
         end = min(start + chunk_size, n_query)
         X_chunk = X[start:end]
-        
+
         # Compute kernel chunk: shape (chunk_size, n_train)
         K_chunk = kernel_obj(X_chunk, Y, sigmas_X, sigmas_Y, symmetric=False)
-        
+
         # Compute matmul: (chunk_size, n_train) @ (n_train, n_classes)
         result[start:end] = K_chunk @ weights.T
-    
+
     if squeeze_output:
         return result.squeeze(axis=1)
     return result
