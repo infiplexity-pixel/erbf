@@ -26,36 +26,33 @@ References:
     "Optimized ERBF: Automatic k Selection for Perfect Training Accuracy"
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "ERBF Contributors"
 
 from erbf.classifier import ERBFClassifier
-from erbf.regressor import ERBFRegressor
+from erbf.datasets import load_mnist_subset, make_classification_demo, make_regression_demo
 from erbf.kernel import (
     GaussianKernel,
-    MultiquadricKernel,
     InverseMultiquadricKernel,
+    MultiquadricKernel,
     ThinPlateSplineKernel,
     build_kernel_matrix,
     chunked_kernel_matmul,
 )
-from erbf.sigma import (
-    compute_local_sigmas,
-    compute_global_sigma,
-    auto_select_k,
-)
-from erbf.model_selection import ERBFGridSearchCV, cross_validate
 from erbf.metrics import (
+    classification_report,
     interpolation_error,
     kernel_condition_number,
     per_class_accuracy,
-    classification_report,
 )
-from erbf.datasets import load_mnist_subset, make_classification_demo, make_regression_demo
-from erbf.visualization import (
-    plot_kernel_matrix,
-    plot_sigma_distribution
+from erbf.model_selection import ERBFGridSearchCV, cross_validate
+from erbf.regressor import ERBFRegressor
+from erbf.sigma import (
+    auto_select_k,
+    compute_global_sigma,
+    compute_local_sigmas,
 )
+from erbf.visualization import plot_kernel_matrix, plot_sigma_distribution
 
 __all__ = [
     # Core estimators
@@ -87,6 +84,4 @@ __all__ = [
     # Visualization
     "plot_kernel_matrix",
     "plot_sigma_distribution",
-    "plot_decision_boundary",
-    "plot_interpolation_error",
 ]

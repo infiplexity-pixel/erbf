@@ -8,7 +8,7 @@ dependency.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -34,7 +34,7 @@ def plot_kernel_matrix(
     title: str = "ERBF Kernel Matrix",
     cmap: str = "viridis",
     figsize: tuple[int, int] = (8, 6),
-) -> "matplotlib.figure.Figure":
+) -> matplotlib.figure.Figure:
     """Visualise a kernel matrix as a heatmap.
 
     Parameters
@@ -65,7 +65,7 @@ def plot_sigma_distribution(
     title: str = "Adaptive σ Distribution",
     bins: int = 30,
     figsize: tuple[int, int] = (8, 5),
-) -> "matplotlib.figure.Figure":
+) -> matplotlib.figure.Figure:
     """Plot histogram of adaptive bandwidth values.
 
     Parameters

@@ -5,7 +5,7 @@ Model selection utilities: grid search and cross-validation.
 from __future__ import annotations
 
 import itertools
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -134,10 +134,10 @@ class ERBFGridSearchCV:
 
         self.best_params_: dict[str, Any] = {}
         self.best_score_: float = -np.inf
-        self.best_estimator_: Optional[ERBFClassifier | ERBFRegressor] = None
+        self.best_estimator_: ERBFClassifier | ERBFRegressor | None = None
         self.cv_results_: list[dict] = []
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "ERBFGridSearchCV":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> ERBFGridSearchCV:
         """Run grid search.
 
         Parameters

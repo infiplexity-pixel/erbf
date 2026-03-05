@@ -44,11 +44,12 @@ dependencies = [
 [project.optional-dependencies]
 progress = ["tqdm>=4.60.0"]
 viz = ["matplotlib>=3.4.0"]
-datasets = ["scikit-learn>=1.0.0"]
+datasets = ["torchvision>=0.11.0"]
 all = [
     "tqdm>=4.60.0",
     "matplotlib>=3.4.0",
     "scikit-learn>=1.0.0",
+    "torchvision>=0.11.0",
 ]
 dev = [
     "pytest>=7.0.0",

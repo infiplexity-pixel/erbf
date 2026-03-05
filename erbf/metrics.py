@@ -4,11 +4,7 @@ Evaluation metrics for ERBF models.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
-
-from erbf.kernel import build_kernel_matrix
 
 
 def interpolation_error(
@@ -51,7 +47,7 @@ def kernel_condition_number(K: np.ndarray) -> float:
 def per_class_accuracy(
     y_true: np.ndarray,
     y_pred: np.ndarray,
-    classes: Optional[np.ndarray] = None,
+    classes: np.ndarray | None = None,
 ) -> dict[int, dict[str, float | int]]:
     """Per-class accuracy breakdown.
 
@@ -89,7 +85,7 @@ def per_class_accuracy(
 def classification_report(
     y_true: np.ndarray,
     y_pred: np.ndarray,
-    classes: Optional[np.ndarray] = None,
+    classes: np.ndarray | None = None,
     *,
     return_string: bool = True,
 ) -> str | dict:
@@ -117,7 +113,6 @@ def classification_report(
 
     for c in classes:
         mask_true = y_true == c
-        mask_pred = y_pred == c
 
         tp = int(((y_pred == c) & (y_true == c)).sum())
         fp = int(((y_pred == c) & (y_true != c)).sum())

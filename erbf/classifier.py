@@ -15,13 +15,11 @@ to be 100 %** (up to floating-point precision).
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 from scipy.linalg import solve
 
-from erbf.kernel import BaseKernel, GaussianKernel, build_kernel_matrix, chunked_kernel_matmul
-from erbf.sigma import compute_local_sigmas, auto_select_k
+from erbf.kernel import BaseKernel, build_kernel_matrix, chunked_kernel_matmul
+from erbf.sigma import compute_local_sigmas
 
 try:
     from tqdm import tqdm
@@ -53,7 +51,7 @@ class ERBFClassifier:
     kernel : str or BaseKernel, default="gaussian"
         Kernel function.
     chunk_size : int, default=500
-        Number of samples to process at a time during training (sigma 
+        Number of samples to process at a time during training (sigma
         computation) and prediction. Controls memory usage.
     show_progress : bool, default=False
         Show tqdm progress bars during training and prediction.
@@ -86,7 +84,7 @@ class ERBFClassifier:
 
     def __init__(
         self,
-        k_neighbors: Optional[int] = None,
+        k_neighbors: int | None = None,
         k_multiplier: float = 1.5,
         k_minimum: int = 10,
         min_sigma: float = 0.5,
@@ -111,11 +109,11 @@ class ERBFClassifier:
         self.verbose = verbose
 
         # Fitted state
-        self.X_train_: Optional[np.ndarray] = None
-        self.classes_: Optional[np.ndarray] = None
-        self.weights_: Optional[np.ndarray] = None
-        self.sigmas_: Optional[np.ndarray] = None
-        self.K_train_: Optional[np.ndarray] = None
+        self.X_train_: np.ndarray | None = None
+        self.classes_: np.ndarray | None = None
+        self.weights_: np.ndarray | None = None
+        self.sigmas_: np.ndarray | None = None
+        self.K_train_: np.ndarray | None = None
         self.interpolation_errors_: dict[int, float] = {}
         self.condition_number_: float = 0.0
 
@@ -123,7 +121,7 @@ class ERBFClassifier:
     # Public API
     # ------------------------------------------------------------------
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "ERBFClassifier":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> ERBFClassifier:
         """Fit the ERBF classifier on training data.
 
         Parameters
@@ -279,7 +277,7 @@ class ERBFClassifier:
             "verbose": self.verbose,
         }
 
-    def set_params(self, **params) -> "ERBFClassifier":
+    def set_params(self, **params) -> ERBFClassifier:
         """Set estimator parameters (sklearn-compatible)."""
         for key, value in params.items():
             if not hasattr(self, key):

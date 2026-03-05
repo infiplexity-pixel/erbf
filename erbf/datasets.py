@@ -4,22 +4,18 @@ Dataset loading and synthetic data generation utilities.
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import numpy as np
-
-from typing import Tuple
-import numpy as np
-import torch
-from torchvision import datasets, transforms
 
 
 def load_mnist_subset(
     n_train: int = 200,
     n_test: int = 200,
     seed: int = 42,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load a random subset of MNIST using torchvision, normalised to [0, 1].
+
+    Requires ``torchvision`` to be installed (``pip install erbf[datasets]``
+    or ``pip install torchvision``).
 
     Parameters
     ----------
@@ -33,7 +29,19 @@ def load_mnist_subset(
     y_train : ndarray of shape (n_train,)
     X_test : ndarray of shape (n_test, 784)
     y_test : ndarray of shape (n_test,)
+
+    Raises
+    ------
+    ImportError
+        If ``torchvision`` is not installed.
     """
+    try:
+        from torchvision import datasets, transforms
+    except ImportError:
+        raise ImportError(
+            "torchvision is required for load_mnist_subset. "
+            "Install it with: pip install torchvision"
+        )
 
     rng = np.random.RandomState(seed)
 
@@ -84,7 +92,7 @@ def make_classification_demo(
     n_classes: int = 3,
     separation: float = 2.0,
     seed: int = 42,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate a simple multiclass classification dataset.
 
     Generates *n_classes* Gaussian clusters.
@@ -127,7 +135,7 @@ def make_regression_demo(
     n_features: int = 1,
     noise: float = 0.1,
     seed: int = 42,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Generate a simple nonlinear regression dataset.
 
     ``y = sin(2πx) + noise`` for 1D, or sum-of-sines for higher dimensions.
