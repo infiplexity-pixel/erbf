@@ -115,7 +115,6 @@ class ERBFRegressor:
             y = y[:, None]
 
         self.X_train_ = X
-        X.shape[0]
 
         self.sigmas_ = compute_local_sigmas(
             X,

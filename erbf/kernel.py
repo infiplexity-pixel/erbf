@@ -102,7 +102,6 @@ class BaseKernel(abc.ABC):
             sigmas_Y = sigmas_X
 
         n = X.shape[0]
-        Y.shape[0]
 
         D = cdist(X, Y)
         D_P = D ** self.P
@@ -321,7 +320,6 @@ def chunked_kernel_matmul(
         raise TypeError(f"kernel must be str or BaseKernel, got {type(kernel)}")
 
     n_query = X.shape[0]
-    Y.shape[0]
 
     # Handle weights shape
     weights = np.asarray(weights)
