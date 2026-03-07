@@ -28,7 +28,7 @@ print("  ERBF Library  ·  MNIST Classification Example")
 print("=" * 65)
 
 X_train, y_train, X_test, y_test = load_mnist_subset(
-    n_train=200, n_test=200, seed=42
+    n_train=5_000, n_test=200, seed=42
 )
 print(f"\nData loaded: train {X_train.shape}, test {X_test.shape}")
 print(f"Label distribution: {dict(zip(*__import__('numpy').unique(y_train, return_counts=True)))}")
