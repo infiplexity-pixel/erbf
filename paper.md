@@ -73,11 +73,11 @@ Exact interpolation is essential in specific scenarios:
 
 | Feature | ERBF | SciPy RBFInterpolator | scikit-learn SVM | GPy |
 |---------|------|----------------------|------------------|-----|
-| Exact interpolation | ✔️ | ✔️ | ❌ | ✔️ |
-| Adaptive local bandwidth | ✔️ | ❌ | ❌ | ❌ |
-| Classification support | ✔️ | ❌ | ✔️ | Limited |
-| Scikit-learn API | ✔️ | ❌ | ✔️ | ❌ |
-| Automatic hyperparameters | ✔️ | ❌ | ❌ | ✔️ |
+| Exact interpolation | yes | yes | no | yes |
+| Adaptive local bandwidth | yes | no | no | no |
+| Classification support | yes | no | yes | Limited |
+| Scikit-learn API | yes | no | yes | no |
+| Automatic hyperparameters | yes | no | no | yes |
 
 `ERBF` uniquely combines exact interpolation, adaptive local bandwidth selection, classification support, and scikit-learn convenience. While SVM typically achieves 1–2 percentage points higher test accuracy on standard benchmarks with abundant balanced data, **`ERBF`'s value lies in meeting domain-specific requirements** (certification, anomaly detection, small samples, variable density) where exact interpolation is preferable.
 
