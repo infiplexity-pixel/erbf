@@ -29,11 +29,11 @@ bibliography: paper.bib
 
 # Statement of Need
 
-The Python machine learning ecosystem has strong support for approximate kernel methods and probabilistic alternatives (scikit-learn's SVM, kernel ridge regression, GPy). However, practitioners seeking **deterministic exact RBF interpolation** for supervised learning encounter a gap:
+The Python machine learning ecosystem has strong support for approximate kernel methods and probabilistic alternatives. Scikit-learn [@Pedregosa2011] provides mature implementations of SVM, kernel ridge regression, and other approximate methods. However, practitioners seeking **deterministic exact RBF interpolation** for supervised learning encounter a gap:
 
-- **SciPy's `RBFInterpolator`**: Regression only (no classification), fixed global bandwidth, no multiclass handling, no scikit-learn integration
+- **SciPy's `RBFInterpolator`** [@Virtanen2020]: Regression only (no classification), fixed global bandwidth, no multiclass handling, no scikit-learn integration
 - **Kernel Ridge Regression with $\lambda \to 0$**: Numerically ill-conditioned before reaching true interpolation
-- **Noise-free Gaussian processes**: Require expensive marginal likelihood optimization and lack deterministic simplicity
+- **Noise-free Gaussian processes** [@Rasmussen2006]: Require expensive marginal likelihood optimization and lack deterministic simplicity
 
 Exact interpolation is essential in specific scenarios:
 
@@ -49,23 +49,27 @@ Exact interpolation is essential in specific scenarios:
 
 `ERBF` solves classification and regression via exact kernel interpolation. For a dataset of $N$ training samples, the method constructs a kernel matrix $K_{ij} = \phi(\|x_i - x_j\|/\sigma_j)$ where $\phi$ is an RBF kernel (Gaussian by default) and $\sigma_j$ is point-specific. Interpolation coefficients are found by solving $K \alpha = y$ exactly. At prediction, $f(x) = \sum_{i=1}^N \alpha_i \phi(\|x - x_i\|/\sigma_i)$. For multiclass classification, `ERBF` uses one-vs-all decomposition. This approach guarantees 100% training accuracy by construction.
 
+The theoretical foundations of radial basis functions draw from established literature [@Buhmann2003; @Wendland2005; @Fasshauer2007]. The earliest application of multiquadric functions was introduced by Hardy [@Hardy1971], and comprehensive scattered data interpolation tests were conducted by Franke [@Franke1982].
+
 **Adaptive Local Bandwidth Selection**: Rather than a single global bandwidth, each training point receives an individualized bandwidth based on local data density: $\sigma_i = c \cdot d_k(x_i)$, where $d_k(x_i)$ is the k-th nearest neighbor distance. Automatic k-selection ($k = \max(10, \lfloor 1.5 \sqrt{N} \rfloor)$) eliminates manual hyperparameter tuning while producing well-conditioned kernel matrices.
 
 **Implementation Features**:
 - Condition number monitoring with warnings when $\kappa(K) > 10^{13}$
 - Automatic duplicate detection and handling
-- Stable linear solvers (Cholesky decomposition with SVD fallback)
-- Adaptive Tikhonov regularization ($\lambda=10^{-10}$ default) for stability
-- Scikit-learn compatible API (`fit`, `predict`, `predict_proba`)
+- Stable linear solvers (Cholesky decomposition [@Cholesky1910] with SVD fallback [@Golub1970])
+- Adaptive Tikhonov regularization [@Tikhonov1963] ($\lambda=10^{-10}$ default) for stability
+- Scikit-learn compatible API [@Pedregosa2011] (`fit`, `predict`, `predict_proba`)
 - Diagnostic methods: `get_training_interpolation_error()`, `get_condition_number()`, `get_effective_bandwidths()`
+
+The implementation leverages NumPy [@Harris2020] for efficient array operations and SciPy [@Virtanen2020] for robust numerical algorithms.
 
 # Research Impact and Results
 
-**Evaluation on MNIST subset** (N=200): 100% training accuracy, ~96% test accuracy, condition number κ(K) ≈ 10⁸, fit time <1 second. Scaling to N=5,000 achieves ~98% test accuracy with perfect training accuracy.
+**Evaluation on MNIST subset** [@LeCun1998] (N=200): 100% training accuracy, ~96% test accuracy, condition number κ(K) ≈ 10⁸, fit time <1 second. Scaling to N=5,000 achieves ~98% test accuracy with perfect training accuracy.
 
 **Use-case-specific advantages**:
-- **Anomaly detection**: 97.2% detection accuracy vs 94.1% One-class SVM, leveraging perfect reconstruction
-- **Small sample regime** (N=847 medical imaging): 94.2% test accuracy vs 93.8% RBF SVM
+- **Anomaly detection**: 97.2% detection accuracy vs 94.1% One-class SVM [@Scholkopf1997], leveraging perfect reconstruction
+- **Small sample regime** (N=847 medical imaging): 94.2% test accuracy vs 93.8% RBF SVM [@Scholkopf1998]
 - **Variable density adaptation** (astronomical data): 91.8% accuracy vs 89.4% fixed-bandwidth SVM
 - **Certification requirement**: 100% training accuracy meets regulatory requirements where approximate methods fail
 
@@ -79,7 +83,7 @@ Exact interpolation is essential in specific scenarios:
 | Scikit-learn API | yes | no | yes | no |
 | Automatic hyperparameters | yes | no | no | yes |
 
-`ERBF` uniquely combines exact interpolation, adaptive local bandwidth selection, classification support, and scikit-learn convenience. While SVM typically achieves 1–2 percentage points higher test accuracy on standard benchmarks with abundant balanced data, **`ERBF`'s value lies in meeting domain-specific requirements** (certification, anomaly detection, small samples, variable density) where exact interpolation is preferable.
+`ERBF` uniquely combines exact interpolation, adaptive local bandwidth selection, classification support, and scikit-learn convenience. While SVM [@Vapnik1995] typically achieves 1–2 percentage points higher test accuracy on standard benchmarks with abundant balanced data, **`ERBF`'s value lies in meeting domain-specific requirements** (certification, anomaly detection, small samples, variable density) where exact interpolation is preferable.
 
 # Software Quality and Availability
 
@@ -100,4 +104,5 @@ clf.fit(X_train, y_train)
 y_pred = clf.predict(X_test)
 
 ```
+
 # References
