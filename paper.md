@@ -25,13 +25,13 @@ bibliography: paper.bib
 
 # Summary
 
-`ERBF` is a production-ready Python library implementing exact radial basis function (RBF) interpolation for supervised learning. Unlike approximate kernel methods (SVMs, kernel ridge regression) that solve regularized optimization problems, `ERBF` reconstructs training labels perfectly while maintaining competitive test performance through adaptive bandwidth selection. The library's primary contribution is a **practical automatic local bandwidth selection scheme** where each training point receives an individualized bandwidth $\sigma_i = c \cdot d_k(x_i)$ computed from its k-nearest neighbors, with automatic k-selection heuristic $k = \max(10, \lfloor 1.5\sqrt{N} \rfloor)$ that eliminates manual hyperparameter tuning. The implementation prioritizes production quality with comprehensive testing, continuous integration across Python 3.8–3.12, a scikit-learn-compatible API, and comprehensive documentation.
+`ERBF` is a production-ready Python library implementing exact radial basis function (RBF) interpolation [@Hardy1971; @Buhmann2003] for supervised learning. Unlike approximate kernel methods (SVMs [@Vapnik1995], kernel ridge regression [@Pedregosa2011], GPy [@GPy2014]) that solve regularized optimization problems, `ERBF` reconstructs training labels perfectly while maintaining competitive test performance through adaptive bandwidth selection. The library's primary contribution is a **practical automatic local bandwidth selection scheme** where each training point receives an individualized bandwidth $\sigma_i = c \cdot d_k(x_i)$ computed from its k-nearest neighbors, with automatic k-selection heuristic $k = \max(10, \lfloor 1.5\sqrt{N} \rfloor)$ that eliminates manual hyperparameter tuning. The implementation prioritizes production quality with comprehensive testing, continuous integration across Python 3.8–3.12, a scikit-learn-compatible API, and comprehensive documentation.
 
 # Statement of Need
 
-The Python machine learning ecosystem has strong support for approximate kernel methods and probabilistic alternatives (scikit-learn's SVM, kernel ridge regression, GPy). However, practitioners seeking **deterministic exact RBF interpolation** for supervised learning encounter a gap:
+The Python machine learning ecosystem has strong support for approximate kernel methods and probabilistic alternatives (scikit-learn's SVM, kernel ridge regression [@Pedregosa2011], GPy [@GPy2014]). However, practitioners seeking **deterministic exact RBF interpolation** [@Wendland2005] for supervised learning encounter a gap:
 
-- **SciPy's `RBFInterpolator`**: Regression only (no classification), fixed global bandwidth, no multiclass handling, no scikit-learn integration
+- **SciPy's `RBFInterpolator`** [@Virtanen2020]: Regression only (no classification), fixed global bandwidth, no multiclass handling, no scikit-learn integration
 - **Kernel Ridge Regression with $\lambda \to 0$**: Numerically ill-conditioned before reaching true interpolation
 - **Noise-free Gaussian processes**: Require expensive marginal likelihood optimization and lack deterministic simplicity
 
@@ -47,7 +47,7 @@ Exact interpolation is essential in specific scenarios:
 
 # Software Design
 
-`ERBF` solves classification and regression via exact kernel interpolation. For a dataset of $N$ training samples, the method constructs a kernel matrix $K_{ij} = \phi(\|x_i - x_j\|/\sigma_j)$ where $\phi$ is an RBF kernel (Gaussian by default) and $\sigma_j$ is point-specific. Interpolation coefficients are found by solving $K \alpha = y$ exactly. At prediction, $f(x) = \sum_{i=1}^N \alpha_i \phi(\|x - x_i\|/\sigma_i)$. For multiclass classification, `ERBF` uses one-vs-all decomposition. This approach guarantees 100% training accuracy by construction.
+`ERBF` solves classification and regression via exact kernel interpolation [@Fasshauer2007; @Franke1982]. For a dataset of $N$ training samples, the method constructs a kernel matrix $K_{ij} = \phi(\|x_i - x_j\|/\sigma_j)$ where $\phi$ is an RBF kernel (Gaussian by default) and $\sigma_j$ is point-specific. Interpolation coefficients are found by solving $K \alpha = y$ exactly. At prediction, $f(x) = \sum_{i=1}^N \alpha_i \phi(\|x - x_i\|/\sigma_i)$. For multiclass classification, `ERBF` uses one-vs-all decomposition. This approach guarantees 100% training accuracy by construction.
 
 **Adaptive Local Bandwidth Selection**: Rather than a single global bandwidth, each training point receives an individualized bandwidth based on local data density: $\sigma_i = c \cdot d_k(x_i)$, where $d_k(x_i)$ is the k-th nearest neighbor distance. Automatic k-selection ($k = \max(10, \lfloor 1.5 \sqrt{N} \rfloor)$) eliminates manual hyperparameter tuning while producing well-conditioned kernel matrices.
 
@@ -71,7 +71,7 @@ Exact interpolation is essential in specific scenarios:
 
 # Comparison with Related Work
 
-| Feature | ERBF | SciPy RBFInterpolator | scikit-learn SVM | GPy |
+| Feature | ERBF | SciPy RBFInterpolator [@Virtanen2020] | scikit-learn SVM [@Pedregosa2011] | GPy [@GPy2014] |
 |---------|------|----------------------|------------------|-----|
 | Exact interpolation | yes | yes | no | yes |
 | Adaptive local bandwidth | yes | no | no | no |
@@ -86,7 +86,7 @@ Exact interpolation is essential in specific scenarios:
 The library features:
 - **Comprehensive test suite** with tests covering all core functionality
 - **Continuous integration** across Python 3.8–3.12, macOS, Ubuntu, Windows
-- **Comprehensive documentation** with API reference, docstring coverage, and worked examples
+- **NumPy-based implementation** [@Harris2020] with comprehensive documentation, API reference, docstring coverage, and worked examples
 - **Benchmark reproducibility** scripts in examples
 - **MIT License** for unrestricted use and community contribution
 
