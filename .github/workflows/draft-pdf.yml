@@ -1,32 +1,27 @@
-name: Draft PDF
+name: Build draft PDF
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'paper.md'
-      - 'paper.bib'
-      - '.github/workflows/draft-pdf.yml'
+  pull_request:
 
 jobs:
   paper:
     runs-on: ubuntu-latest
-    name: Paper Draft
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build draft PDF
-        uses: infiplexity-pixel/openjournals-draft-action@master
+      - name: Build paper draft
+        uses: openjournals/openjournals-draft-action@v1
         with:
           journal: joss
           paper-path: paper.md
-          bibliography-path: paper.bib
 
-      - name: Commit and push PDF
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add paper.pdf
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update paper.pdf" && git push)
+      - name: Upload draft PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: paper.pdf
