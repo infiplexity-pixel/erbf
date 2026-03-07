@@ -184,19 +184,6 @@ The key innovation is **adaptive local bandwidth selection**, where each trainin
 3. **System Solving**: Solve K · w = y exactly (with small regularization for numerical stability)
 4. **Prediction**: For new points, compute kernel similarities to all training points and combine with learned weights
 
-## Citation
-
-If you use ERBF in your research, please cite:
-
-```bibtex
-@software{erbf2024,
-  title = {ERBF: Exact Radial Basis Function Interpolation Library},
-  author = {ERBF Contributors},
-  year = {2024},
-  url = {https://github.com/erbf-contributors/erbf}
-}
-```
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
