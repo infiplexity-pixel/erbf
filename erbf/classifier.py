@@ -40,10 +40,6 @@ class ERBFClassifier:
         Multiplier for automatic k selection (k ≈ multiplier·√N).
     k_minimum : int, default=10
         Minimum k when using automatic selection.
-    min_sigma : float, default=0.5
-        Lower bound for per-point σ.
-    max_sigma : float, default=20.0
-        Upper bound for per-point σ.
     P : int, default=2
         Distance exponent.
     lambda_reg : float, default=1e-10
@@ -87,8 +83,6 @@ class ERBFClassifier:
         k_neighbors: int | None = None,
         k_multiplier: float = 1.5,
         k_minimum: int = 10,
-        min_sigma: float = 0.5,
-        max_sigma: float = 20.0,
         P: int = 2,
         lambda_reg: float = 1e-10,
         kernel: str | BaseKernel = "gaussian",
@@ -99,8 +93,6 @@ class ERBFClassifier:
         self.k_neighbors = k_neighbors
         self.k_multiplier = k_multiplier
         self.k_minimum = k_minimum
-        self.min_sigma = min_sigma
-        self.max_sigma = max_sigma
         self.P = P
         self.lambda_reg = lambda_reg
         self.kernel = kernel
@@ -147,8 +139,6 @@ class ERBFClassifier:
             k_neighbors=self.k_neighbors,
             k_multiplier=self.k_multiplier,
             k_minimum=self.k_minimum,
-            min_sigma=self.min_sigma,
-            max_sigma=self.max_sigma,
             chunk_size=self.chunk_size,
             show_progress=self.show_progress,
             verbose=self.verbose,
@@ -267,8 +257,6 @@ class ERBFClassifier:
             "k_neighbors": self.k_neighbors,
             "k_multiplier": self.k_multiplier,
             "k_minimum": self.k_minimum,
-            "min_sigma": self.min_sigma,
-            "max_sigma": self.max_sigma,
             "P": self.P,
             "lambda_reg": self.lambda_reg,
             "kernel": self.kernel,

@@ -103,8 +103,13 @@ class BaseKernel(abc.ABC):
 
         n = X.shape[0]
 
-        D = cdist(X, Y)
-        D_P = D ** self.P
+        if self.P == 2:
+            XX = np.einsum('ij,ij->i', X, X)[:, None]   # (n, 1)
+            YY = np.einsum('ij,ij->i', Y, Y)[None, :]   # (1, m)
+            D_P = np.maximum(XX + YY - 2.0 * (X @ Y.T), 0.0)  # (n, m), clipped for numerics
+        else:
+            D = cdist(X, Y)
+            D_P = D ** self.P
 
         # ── Determine row sigmas ──────────────────────────────────
         # sigmas_X is provided by the caller.  Two cases:

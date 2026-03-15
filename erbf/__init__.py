@@ -30,7 +30,12 @@ __version__ = "0.1.1"
 __author__ = "ERBF Contributors"
 
 from erbf.classifier import ERBFClassifier
-from erbf.datasets import load_mnist_subset, make_classification_demo, make_regression_demo
+from erbf.datasets import (
+    load_mnist_subset, 
+    make_classification_demo, 
+    make_regression_demo, 
+    load_cifar10_subset
+)
 from erbf.kernel import (
     GaussianKernel,
     InverseMultiquadricKernel,

@@ -57,8 +57,6 @@ def compute_local_sigmas(
     *,
     k_multiplier: float = 1.5,
     k_minimum: int = 10,
-    min_sigma: float = 0.5,
-    max_sigma: float = 20.0,
     metric: str = "euclidean",
     chunk_size: int = 500,
     verbose: bool = False,
@@ -105,7 +103,7 @@ def compute_local_sigmas(
     if k_neighbors is None:
         k_neighbors = auto_select_k(N, multiplier=k_multiplier, minimum=k_minimum)
     # Clamp k to at most N-1 (all other points)
-    k_neighbors = min(k_neighbors, N - 1)
+    k_neighbors = k_neighbors
 
     if verbose:
         print(
@@ -126,21 +124,25 @@ def compute_local_sigmas(
         end = min(start + chunk_size, N)
         X_chunk = X[start:end]
 
-        # Compute distances from chunk to all points
-        D_chunk = cdist(X_chunk, X, metric=metric)  # shape: (chunk_size, N)
+        # Replace cdist with matmul-based squared distances, then sqrt
+        XX = np.einsum('ij,ij->i', X_chunk, X_chunk)[:, None]  # (chunk, 1)
+        YY = np.einsum('ij,ij->i', X, X)[None, :]              # (1, N)
+        D_chunk = np.sqrt(np.maximum(XX + YY - 2.0 * (X_chunk @ X.T), 0.0))
 
         for i, global_i in enumerate(range(start, end)):
             row = D_chunk[i].copy()
-            row[global_i] = np.inf  # exclude self
-            knn_dists = np.sort(row)[:k_neighbors]
-            sigmas[global_i] = np.clip(np.mean(knn_dists), min_sigma, max_sigma)
+            row[global_i] = np.inf
+            sigmas[global_i] = np.mean(np.partition(row, k_neighbors)[:k_neighbors])
+
 
     if verbose:
         print(
             f"[sigma] σ range: [{sigmas.min():.4f}, {sigmas.max():.4f}], "
             f"mean={sigmas.mean():.4f}"
         )
-
+    
+    if np.isinf(sigmas).any():
+        raise ValueError("Some σ values are infinite. This may indicate that k_neighbors is too large for the dataset size.")
     return sigmas
 
 
