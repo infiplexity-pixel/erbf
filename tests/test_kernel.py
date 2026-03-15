@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from erbf.kernel import (
     GaussianKernel,
@@ -22,8 +23,8 @@ def rng():
 
 @pytest.fixture
 def simple_data(rng):
-    X = rng.standard_normal((20, 3))
-    sigmas = np.full(20, 1.0)
+    X = torch.tensor(rng.standard_normal((20, 3)), dtype=torch.float64)
+    sigmas = torch.ones(20, dtype=torch.float64)
     return X, sigmas
 
 
@@ -33,26 +34,28 @@ class TestGaussianKernel:
         kernel = GaussianKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=True)
         # Diagonal should be 1.0 + lambda_reg
-        np.testing.assert_allclose(np.diag(K), 1.0 + 1e-10, atol=1e-12)
+        torch.testing.assert_close(
+            K.diag(), torch.full((20,), 1.0 + 1e-10, dtype=torch.float64), atol=1e-12, rtol=0
+        )
 
     def test_symmetric(self, simple_data):
         X, sigmas = simple_data
         kernel = GaussianKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=True)
-        np.testing.assert_allclose(K, K.T, atol=1e-12)
+        torch.testing.assert_close(K, K.T, atol=1e-12, rtol=0)
 
     def test_values_in_range(self, simple_data):
         X, sigmas = simple_data
         kernel = GaussianKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=False)
-        assert np.all(K >= 0)
-        assert np.all(K <= 1.0 + 1e-8)
+        assert torch.all(K >= 0)
+        assert torch.all(K <= 1.0 + 1e-8)
 
     def test_shape(self, rng):
-        X = rng.standard_normal((10, 5))
-        Y = rng.standard_normal((15, 5))
-        sigmas_x = np.ones(10)
-        sigmas_y = np.ones(15)
+        X = torch.tensor(rng.standard_normal((10, 5)), dtype=torch.float64)
+        Y = torch.tensor(rng.standard_normal((15, 5)), dtype=torch.float64)
+        sigmas_x = torch.ones(10, dtype=torch.float64)
+        sigmas_y = torch.ones(15, dtype=torch.float64)
         kernel = GaussianKernel()
         K = kernel(X, Y, sigmas_x, sigmas_y)
         assert K.shape == (10, 15)
@@ -63,13 +66,13 @@ class TestMultiquadricKernel:
         X, sigmas = simple_data
         kernel = MultiquadricKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=False)
-        assert np.all(K >= 1.0)
+        assert torch.all(K >= 1.0)
 
     def test_symmetric(self, simple_data):
         X, sigmas = simple_data
         kernel = MultiquadricKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=True)
-        np.testing.assert_allclose(K, K.T, atol=1e-12)
+        torch.testing.assert_close(K, K.T, atol=1e-12, rtol=0)
 
 
 class TestInverseMultiquadricKernel:
@@ -77,14 +80,14 @@ class TestInverseMultiquadricKernel:
         X, sigmas = simple_data
         kernel = InverseMultiquadricKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=False)
-        assert np.all(K > 0)
-        assert np.all(K <= 1.0)
+        assert torch.all(K > 0)
+        assert torch.all(K <= 1.0)
 
     def test_symmetric(self, simple_data):
         X, sigmas = simple_data
         kernel = InverseMultiquadricKernel()
         K = kernel(X, X, sigmas, sigmas, symmetric=True)
-        np.testing.assert_allclose(K, K.T, atol=1e-12)
+        torch.testing.assert_close(K, K.T, atol=1e-12, rtol=0)
 
 
 class TestThinPlateSplineKernel:
@@ -141,11 +144,11 @@ class TestBuildKernelMatrix:
 
 class TestChunkedKernelMatmul:
     def test_matches_direct_computation(self, rng):
-        X = rng.standard_normal((30, 4))
-        Y = rng.standard_normal((20, 4))
-        sigmas_x = np.ones(30)
-        sigmas_y = np.ones(20)
-        weights = rng.standard_normal((3, 20))
+        X = torch.tensor(rng.standard_normal((30, 4)), dtype=torch.float64)
+        Y = torch.tensor(rng.standard_normal((20, 4)), dtype=torch.float64)
+        sigmas_x = torch.ones(30, dtype=torch.float64)
+        sigmas_y = torch.ones(20, dtype=torch.float64)
+        weights = torch.tensor(rng.standard_normal((3, 20)), dtype=torch.float64)
 
         # Direct computation
         K = build_kernel_matrix(X, Y, sigmas_x, sigmas_y, kernel="gaussian")
@@ -156,14 +159,14 @@ class TestChunkedKernelMatmul:
             X, Y, sigmas_x, sigmas_y, weights,
             kernel="gaussian", chunk_size=10,
         )
-        np.testing.assert_allclose(result, expected, atol=1e-10)
+        torch.testing.assert_close(result, expected, atol=1e-10, rtol=0)
 
     def test_single_weight_vector(self, rng):
-        X = rng.standard_normal((10, 3))
-        Y = rng.standard_normal((8, 3))
-        sigmas_x = np.ones(10)
-        sigmas_y = np.ones(8)
-        weights = rng.standard_normal(8)
+        X = torch.tensor(rng.standard_normal((10, 3)), dtype=torch.float64)
+        Y = torch.tensor(rng.standard_normal((8, 3)), dtype=torch.float64)
+        sigmas_x = torch.ones(10, dtype=torch.float64)
+        sigmas_y = torch.ones(8, dtype=torch.float64)
+        weights = torch.tensor(rng.standard_normal(8), dtype=torch.float64)
 
         result = chunked_kernel_matmul(
             X, Y, sigmas_x, sigmas_y, weights,

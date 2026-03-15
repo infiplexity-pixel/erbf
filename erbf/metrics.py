@@ -1,15 +1,18 @@
 """
 Evaluation metrics for ERBF models.
+
+Uses PyTorch for kernel-related computations when CUDA is available.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 
 def interpolation_error(
-    K: np.ndarray,
-    weights: np.ndarray,
+    K: np.ndarray | torch.Tensor,
+    weights: np.ndarray | torch.Tensor,
     y: np.ndarray,
     classes: np.ndarray,
 ) -> dict[int, float]:
@@ -17,9 +20,9 @@ def interpolation_error(
 
     Parameters
     ----------
-    K : ndarray of shape (N, N)
+    K : ndarray or Tensor of shape (N, N)
         Training kernel matrix.
-    weights : ndarray of shape (n_classes, N)
+    weights : ndarray or Tensor of shape (n_classes, N)
         Class interpolation weights.
     y : ndarray of shape (N,)
         True labels.
@@ -31,17 +34,26 @@ def interpolation_error(
     errors : dict[int, float]
         Max |K·w_c - I_c| for each class *c*.
     """
+    if isinstance(K, np.ndarray):
+        K = torch.as_tensor(K, dtype=torch.float64)
+    if isinstance(weights, np.ndarray):
+        weights = torch.as_tensor(weights, dtype=torch.float64)
+
     errors = {}
     for idx, c in enumerate(classes):
-        target = (y == c).astype(np.float64)
+        target = torch.tensor(
+            (y == c).astype(np.float64), dtype=torch.float64, device=K.device
+        )
         reconstruction = K @ weights[idx]
-        errors[int(c)] = float(np.max(np.abs(reconstruction - target)))
+        errors[int(c)] = float(torch.max(torch.abs(reconstruction - target)).item())
     return errors
 
 
-def kernel_condition_number(K: np.ndarray) -> float:
+def kernel_condition_number(K: np.ndarray | torch.Tensor) -> float:
     """Return the 2-norm condition number of kernel matrix *K*."""
-    return float(np.linalg.cond(K))
+    if isinstance(K, np.ndarray):
+        K = torch.as_tensor(K, dtype=torch.float64)
+    return float(torch.linalg.cond(K).item())
 
 
 def per_class_accuracy(

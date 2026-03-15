@@ -11,14 +11,16 @@ At prediction time the class with the highest interpolated score is selected::
 
 Because the kernel system is solved exactly, training accuracy is **guaranteed
 to be 100 %** (up to floating-point precision).
+
+Uses PyTorch for GPU-accelerated computation when CUDA is available.
 """
 
 from __future__ import annotations
 
 import numpy as np
-from scipy.linalg import solve
+import torch
 
-from erbf.kernel import BaseKernel, build_kernel_matrix, chunked_kernel_matmul
+from erbf.kernel import BaseKernel, _default_device, _to_tensor, build_kernel_matrix, chunked_kernel_matmul
 from erbf.sigma import compute_local_sigmas
 
 try:
@@ -58,11 +60,11 @@ class ERBFClassifier:
     ----------
     classes_ : ndarray
         Unique class labels discovered during ``fit``.
-    weights_ : ndarray of shape (n_classes, n_train)
+    weights_ : Tensor of shape (n_classes, n_train)
         Interpolation weights per class.
-    sigmas_ : ndarray of shape (n_train,)
+    sigmas_ : Tensor of shape (n_train,)
         Adaptive bandwidths.
-    K_train_ : ndarray of shape (n_train, n_train)
+    K_train_ : Tensor of shape (n_train, n_train)
         Training kernel matrix (cached for diagnostics).
     interpolation_errors_ : dict[int, float]
         Max interpolation error per class after training.
@@ -101,11 +103,11 @@ class ERBFClassifier:
         self.verbose = verbose
 
         # Fitted state
-        self.X_train_: np.ndarray | None = None
+        self.X_train_: torch.Tensor | None = None
         self.classes_: np.ndarray | None = None
-        self.weights_: np.ndarray | None = None
-        self.sigmas_: np.ndarray | None = None
-        self.K_train_: np.ndarray | None = None
+        self.weights_: torch.Tensor | None = None
+        self.sigmas_: torch.Tensor | None = None
+        self.K_train_: torch.Tensor | None = None
         self.interpolation_errors_: dict[int, float] = {}
         self.condition_number_: float = 0.0
 
@@ -118,24 +120,25 @@ class ERBFClassifier:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
-        y : ndarray of shape (n_samples,)
+        X : array-like of shape (n_samples, n_features)
+        y : array-like of shape (n_samples,)
 
         Returns
         -------
         self
         """
-        X = np.asarray(X, dtype=np.float64)
-        y = np.asarray(y).ravel()
+        device = _default_device()
+        X_t = _to_tensor(X, device)
+        y_np = np.asarray(y).ravel()
 
-        self.X_train_ = X
-        self.classes_ = np.unique(y)
+        self.X_train_ = X_t
+        self.classes_ = np.unique(y_np)
         n_classes = len(self.classes_)
-        N = X.shape[0]
+        N = X_t.shape[0]
 
         # 1. Compute adaptive bandwidths
         self.sigmas_ = compute_local_sigmas(
-            X,
+            X_t,
             k_neighbors=self.k_neighbors,
             k_multiplier=self.k_multiplier,
             k_minimum=self.k_minimum,
@@ -146,31 +149,33 @@ class ERBFClassifier:
 
         # 2. Build symmetric training kernel
         self.K_train_ = build_kernel_matrix(
-            X, X, self.sigmas_, self.sigmas_,
+            X_t, X_t, self.sigmas_, self.sigmas_,
             kernel=self.kernel,
             P=self.P,
             lambda_reg=self.lambda_reg,
             symmetric=True,
         )
-        self.condition_number_ = float(np.linalg.cond(self.K_train_))
+        self.condition_number_ = float(torch.linalg.cond(self.K_train_).item())
 
         if self.verbose:
-            print(f"[fit] Kernel shape: {self.K_train_.shape}")
-            print(f"[fit] σ range: [{self.sigmas_.min():.4f}, {self.sigmas_.max():.4f}]")
+            print(f"[fit] Kernel shape: {tuple(self.K_train_.shape)}")
+            print(f"[fit] σ range: [{self.sigmas_.min().item():.4f}, {self.sigmas_.max().item():.4f}]")
             print(f"[fit] cond(K): {self.condition_number_:.2e}")
 
         # 3. Solve one-vs-all systems
-        self.weights_ = np.zeros((n_classes, N), dtype=np.float64)
+        self.weights_ = torch.zeros(n_classes, N, dtype=torch.float64, device=device)
         self.interpolation_errors_ = {}
 
         for idx, c in enumerate(self.classes_):
-            target = (y == c).astype(np.float64)
-            w = solve(self.K_train_, target, assume_a="sym")
+            target = torch.tensor(
+                (y_np == c).astype(np.float64), dtype=torch.float64, device=device
+            )
+            w = torch.linalg.solve(self.K_train_, target)
             self.weights_[idx] = w
 
             # Verify interpolation quality
             reconstruction = self.K_train_ @ w
-            max_err = float(np.max(np.abs(reconstruction - target)))
+            max_err = float(torch.max(torch.abs(reconstruction - target)).item())
             self.interpolation_errors_[int(c)] = max_err
 
             if self.verbose:
@@ -183,7 +188,7 @@ class ERBFClassifier:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
 
         Returns
         -------
@@ -201,18 +206,18 @@ class ERBFClassifier:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
 
         Returns
         -------
         scores : ndarray of shape (n_samples, n_classes)
         """
         self._check_fitted()
-        X = np.asarray(X, dtype=np.float64)
+        X_t = _to_tensor(X, self.X_train_.device)
 
         # Use chunked kernel-weight multiplication to control memory
-        return chunked_kernel_matmul(
-            X, self.X_train_, self.sigmas_, self.sigmas_,
+        scores = chunked_kernel_matmul(
+            X_t, self.X_train_, self.sigmas_, self.sigmas_,
             self.weights_,
             kernel=self.kernel,
             P=self.P,
@@ -220,13 +225,14 @@ class ERBFClassifier:
             chunk_size=self.chunk_size,
             show_progress=self.show_progress,
         )
+        return scores.cpu().numpy()
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Return softmax-normalised class probabilities.
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
 
         Returns
         -------
@@ -235,15 +241,16 @@ class ERBFClassifier:
         scores = self.decision_function(X)
         # Numerically stable softmax
         exp_scores = np.exp(scores - scores.max(axis=1, keepdims=True))
-        return exp_scores / exp_scores.sum(axis=1, keepdims=True)
+        proba = exp_scores / exp_scores.sum(axis=1, keepdims=True)
+        return proba
 
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
         """Return classification accuracy on (*X*, *y*).
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
-        y : ndarray of shape (n_samples,)
+        X : array-like of shape (n_samples, n_features)
+        y : array-like of shape (n_samples,)
 
         Returns
         -------

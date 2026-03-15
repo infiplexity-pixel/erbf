@@ -3,14 +3,16 @@ ERBF regressor for continuous-valued interpolation.
 
 Solves ``K · w = y`` exactly so that the training targets are interpolated
 with zero residual (up to floating-point precision).
+
+Uses PyTorch for GPU-accelerated computation when CUDA is available.
 """
 
 from __future__ import annotations
 
 import numpy as np
-from scipy.linalg import solve
+import torch
 
-from erbf.kernel import BaseKernel, build_kernel_matrix, chunked_kernel_matmul
+from erbf.kernel import BaseKernel, _default_device, _to_tensor, build_kernel_matrix, chunked_kernel_matmul
 from erbf.sigma import compute_local_sigmas
 
 try:
@@ -49,10 +51,10 @@ class ERBFRegressor:
 
     Attributes
     ----------
-    weights_ : ndarray of shape (n_targets, n_train) or (n_train,)
+    weights_ : Tensor of shape (n_targets, n_train) or (n_train,)
         Interpolation weights.
-    sigmas_ : ndarray of shape (n_train,)
-    K_train_ : ndarray of shape (n_train, n_train)
+    sigmas_ : Tensor of shape (n_train,)
+    K_train_ : Tensor of shape (n_train, n_train)
     condition_number_ : float
 
     Examples
@@ -89,10 +91,10 @@ class ERBFRegressor:
         self.show_progress = show_progress
         self.verbose = verbose
 
-        self.X_train_: np.ndarray | None = None
-        self.weights_: np.ndarray | None = None
-        self.sigmas_: np.ndarray | None = None
-        self.K_train_: np.ndarray | None = None
+        self.X_train_: torch.Tensor | None = None
+        self.weights_: torch.Tensor | None = None
+        self.sigmas_: torch.Tensor | None = None
+        self.K_train_: torch.Tensor | None = None
         self.condition_number_: float = 0.0
         self._multi_target: bool = False
 
@@ -101,23 +103,24 @@ class ERBFRegressor:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
-        y : ndarray of shape (n_samples,) or (n_samples, n_targets)
+        X : array-like of shape (n_samples, n_features)
+        y : array-like of shape (n_samples,) or (n_samples, n_targets)
 
         Returns
         -------
         self
         """
-        X = np.asarray(X, dtype=np.float64)
-        y = np.asarray(y, dtype=np.float64)
-        self._multi_target = y.ndim == 2
-        if y.ndim == 1:
-            y = y[:, None]
+        device = _default_device()
+        X_t = _to_tensor(X, device)
+        y_np = np.asarray(y, dtype=np.float64)
+        self._multi_target = y_np.ndim == 2
+        if y_np.ndim == 1:
+            y_np = y_np[:, None]
 
-        self.X_train_ = X
+        self.X_train_ = X_t
 
         self.sigmas_ = compute_local_sigmas(
-            X,
+            X_t,
             k_neighbors=self.k_neighbors,
             k_multiplier=self.k_multiplier,
             k_minimum=self.k_minimum,
@@ -129,22 +132,23 @@ class ERBFRegressor:
         )
 
         self.K_train_ = build_kernel_matrix(
-            X, X, self.sigmas_, self.sigmas_,
+            X_t, X_t, self.sigmas_, self.sigmas_,
             kernel=self.kernel, P=self.P, lambda_reg=self.lambda_reg,
             symmetric=True,
         )
-        self.condition_number_ = float(np.linalg.cond(self.K_train_))
+        self.condition_number_ = float(torch.linalg.cond(self.K_train_).item())
 
         if self.verbose:
             print(f"[fit] cond(K): {self.condition_number_:.2e}")
 
         # Solve for each target column
-        self.weights_ = solve(self.K_train_, y, assume_a="sym")  # (N, n_targets)
+        y_t = torch.as_tensor(y_np, dtype=torch.float64, device=device)
+        self.weights_ = torch.linalg.solve(self.K_train_, y_t)  # (N, n_targets)
         self.weights_ = self.weights_.T  # (n_targets, N)
 
         if self.verbose:
             recon = self.K_train_ @ self.weights_.T
-            max_err = np.max(np.abs(recon - y))
+            max_err = float(torch.max(torch.abs(recon - y_t)).item())
             print(f"[fit] max interpolation error: {max_err:.2e}")
 
         return self
@@ -154,7 +158,7 @@ class ERBFRegressor:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
 
         Returns
         -------
@@ -163,10 +167,10 @@ class ERBFRegressor:
         if self.X_train_ is None or self.weights_ is None:
             raise RuntimeError("ERBFRegressor is not fitted yet.")
 
-        X = np.asarray(X, dtype=np.float64)
+        X_t = _to_tensor(X, self.X_train_.device)
         # Use chunked kernel-weight multiplication to control memory
         y_pred = chunked_kernel_matmul(
-            X, self.X_train_, self.sigmas_, self.sigmas_,
+            X_t, self.X_train_, self.sigmas_, self.sigmas_,
             self.weights_,
             kernel=self.kernel,
             P=self.P,
@@ -174,9 +178,10 @@ class ERBFRegressor:
             chunk_size=self.chunk_size,
             show_progress=self.show_progress,
         )
+        result = y_pred.cpu().numpy()
         if not self._multi_target:
-            y_pred = y_pred.ravel()
-        return y_pred
+            result = result.ravel()
+        return result
 
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
         """Return R² score."""
