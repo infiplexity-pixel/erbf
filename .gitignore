@@ -112,3 +112,6 @@ cython_debug/
 *.png
 *.jpg
 *.jpeg
+*.tar.gz
+data/
+test.py
