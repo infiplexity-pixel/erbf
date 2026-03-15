@@ -115,7 +115,7 @@ class ERBFClassifier:
     # Public API
     # ------------------------------------------------------------------
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> ERBFClassifier:
+    def fit(self, X: np.ndarray, y: np.ndarray, batch_size=10) -> ERBFClassifier:
         """Fit the ERBF classifier on training data.
 
         Parameters
@@ -162,25 +162,32 @@ class ERBFClassifier:
             print(f"[fit] σ range: [{self.sigmas_.min().item():.4f}, {self.sigmas_.max().item():.4f}]")
             print(f"[fit] cond(K): {self.condition_number_:.2e}")
 
-        # 3. Solve one-vs-all systems
-        self.weights_ = torch.zeros(n_classes, N, dtype=torch.float64, device=device)
-        self.interpolation_errors_ = {}
-
-        for idx, c in enumerate(self.classes_):
-            target = torch.tensor(
-                (y_np == c).astype(np.float64), dtype=torch.float64, device=device
-            )
-            w = torch.linalg.pinv(self.K_train_) @ target
-            self.weights_[idx] = w
-
-            # Verify interpolation quality
-            reconstruction = self.K_train_ @ w
-            max_err = float(torch.max(torch.abs(reconstruction - target)).item())
-            self.interpolation_errors_[int(c)] = max_err
-
-            if self.verbose:
-                print(f"[fit] Class {c}: max interpolation error = {max_err:.2e}")
-
+        N = X.shape[0]
+        n_classes = len(self.classes_)
+        self.weights_ = torch.zeros(n_classes, N, dtype=torch.float64, device=X.device)
+        
+        # Factorize once
+        if self.lambda_reg > 0:
+            K_reg = self.K_train_ + self.lambda_reg * torch.eye(N, device=X.device)
+            LU, piv = torch.linalg.lu_factor(K_reg)
+        else:
+            LU, piv = torch.linalg.lu_factor(self.K_train_)
+        
+        # Process classes in batches
+        for start_idx in range(0, n_classes, batch_size):
+            end_idx = min(start_idx + batch_size, n_classes)
+            batch_classes = self.classes_[start_idx:end_idx]
+            
+            # Build batch of RHS
+            Y_batch = torch.zeros(N, end_idx - start_idx, dtype=torch.float64, device=X.device)
+            for j, c in enumerate(batch_classes):
+                mask = torch.tensor(y == c, dtype=torch.bool, device=X.device)
+                Y_batch[mask, j] = 1.0
+            
+            # Solve for entire batch
+            W_batch = torch.linalg.lu_solve(LU, piv, Y_batch)
+            self.weights_[start_idx:end_idx] = W_batch.T
+        
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
