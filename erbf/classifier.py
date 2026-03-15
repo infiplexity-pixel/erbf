@@ -195,10 +195,10 @@ class ERBFClassifier:
         y_pred : ndarray of shape (n_samples,)
         """
         scores = self.decision_function(X)
-        indices = torch.argmax(scores, dim=1)
-        return self.classes_[indices.cpu().numpy()]
+        indices = np.argmax(scores, axis=1)
+        return self.classes_[indices]
 
-    def decision_function(self, X: np.ndarray) -> torch.Tensor:
+    def decision_function(self, X: np.ndarray) -> np.ndarray:
         """Compute per-class interpolation scores.
 
         Uses chunking to keep memory usage constant regardless of the number
@@ -210,13 +210,13 @@ class ERBFClassifier:
 
         Returns
         -------
-        scores : Tensor of shape (n_samples, n_classes)
+        scores : ndarray of shape (n_samples, n_classes)
         """
         self._check_fitted()
         X_t = _to_tensor(X, self.X_train_.device)
 
         # Use chunked kernel-weight multiplication to control memory
-        return chunked_kernel_matmul(
+        scores = chunked_kernel_matmul(
             X_t, self.X_train_, self.sigmas_, self.sigmas_,
             self.weights_,
             kernel=self.kernel,
@@ -225,6 +225,7 @@ class ERBFClassifier:
             chunk_size=self.chunk_size,
             show_progress=self.show_progress,
         )
+        return scores.cpu().numpy()
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Return softmax-normalised class probabilities.
@@ -239,9 +240,9 @@ class ERBFClassifier:
         """
         scores = self.decision_function(X)
         # Numerically stable softmax
-        exp_scores = torch.exp(scores - scores.max(dim=1, keepdim=True).values)
-        proba = exp_scores / exp_scores.sum(dim=1, keepdim=True)
-        return proba.cpu().numpy()
+        exp_scores = np.exp(scores - scores.max(axis=1, keepdims=True))
+        proba = exp_scores / exp_scores.sum(axis=1, keepdims=True)
+        return proba
 
     def score(self, X: np.ndarray, y: np.ndarray) -> float:
         """Return classification accuracy on (*X*, *y*).
