@@ -15,7 +15,7 @@ the library's clean API. It demonstrates:
 import math
 from erbf import (
     ERBFClassifier,
-    load_cifar10_subset,
+    load_mnist_subset,
     # classification_report,
     # per_class_accuracy,
     # plot_kernel_matrix,
@@ -27,8 +27,8 @@ print("=" * 65)
 print("  ERBF Library  ·  MNIST Classification Example")
 print("=" * 65)
 
-X_train, y_train, X_test, y_test = load_cifar10_subset(
-    n_train=50_000, n_test=200, seed=42
+X_train, y_train, X_test, y_test = load_mnist_subset(
+    n_train=60_000, n_test=200, seed=42
 )
 print(f"\nData loaded: train {X_train.shape}, test {X_test.shape}")
 print(f"Label distribution: {dict(zip(*__import__('numpy').unique(y_train, return_counts=True)))}")
@@ -38,7 +38,7 @@ clf = ERBFClassifier(
     P=1,
     lambda_reg=1e-10,
     kernel="gaussian",
-    chunk_size=1_000,
+    chunk_size=100, # one chunk
     show_progress=True,
     verbose=True,
 )

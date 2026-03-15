@@ -170,7 +170,7 @@ class ERBFClassifier:
             target = torch.tensor(
                 (y_np == c).astype(np.float64), dtype=torch.float64, device=device
             )
-            w = torch.linalg.solve(self.K_train_, target)
+            w = torch.linalg.pinv(self.K_train_) @ target
             self.weights_[idx] = w
 
             # Verify interpolation quality
