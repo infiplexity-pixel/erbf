@@ -5,6 +5,8 @@ This module provides kernel classes and a factory function for building
 kernel matrices from training data. All kernels support local (adaptive)
 bandwidth via per-point sigma values.
 
+Uses PyTorch for GPU-accelerated computation when CUDA is available.
+
 Supported Kernels:
     - Gaussian (default): K(r) = exp(-r^P / (2σ²))
     - Multiquadric: K(r) = √(1 + (r/σ)²)
@@ -16,8 +18,7 @@ from __future__ import annotations
 
 import abc
 
-import numpy as np
-from scipy.spatial.distance import cdist
+import torch
 
 try:
     from tqdm import tqdm
@@ -25,6 +26,20 @@ except ImportError:
     # Fallback: no-op tqdm if not installed
     def tqdm(iterable, *args, **kwargs):
         return iterable
+
+
+def _default_device() -> torch.device:
+    """Return CUDA device if available, otherwise CPU."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _to_tensor(x: object, device: torch.device | None = None) -> torch.Tensor:
+    """Convert input to a float64 torch tensor on the given device."""
+    if device is None:
+        device = _default_device()
+    if isinstance(x, torch.Tensor):
+        return x.to(device=device, dtype=torch.float64)
+    return torch.as_tensor(x, dtype=torch.float64, device=device)
 
 
 class BaseKernel(abc.ABC):
@@ -51,43 +66,43 @@ class BaseKernel(abc.ABC):
     @abc.abstractmethod
     def _evaluate(
         self,
-        D_P: np.ndarray,
-        sigma_matrix: np.ndarray,
-    ) -> np.ndarray:
+        D_P: torch.Tensor,
+        sigma_matrix: torch.Tensor,
+    ) -> torch.Tensor:
         """Compute raw kernel values given distance and sigma matrices.
 
         Parameters
         ----------
-        D_P : ndarray of shape (n, m)
+        D_P : Tensor of shape (n, m)
             Pairwise distances raised to the power ``self.P``.
-        sigma_matrix : ndarray of shape (n, m)
+        sigma_matrix : Tensor of shape (n, m)
             Element-wise bandwidth matrix (geometric mean of per-point sigmas).
 
         Returns
         -------
-        K : ndarray of shape (n, m)
+        K : Tensor of shape (n, m)
         """
 
     def __call__(
         self,
-        X: np.ndarray,
-        Y: np.ndarray,
-        sigmas_X: np.ndarray,
-        sigmas_Y: np.ndarray | None = None,
+        X: torch.Tensor,
+        Y: torch.Tensor,
+        sigmas_X: torch.Tensor,
+        sigmas_Y: torch.Tensor | None = None,
         *,
         symmetric: bool = False,
-    ) -> np.ndarray:
+    ) -> torch.Tensor:
         """Build the kernel matrix between *X* and *Y*.
 
         Parameters
         ----------
-        X : ndarray of shape (n, d)
+        X : Tensor of shape (n, d)
             Query or training points (rows of the output matrix).
-        Y : ndarray of shape (m, d)
+        Y : Tensor of shape (m, d)
             Training points (columns of the output matrix).
-        sigmas_X : ndarray of shape (n,)
+        sigmas_X : Tensor of shape (n,)
             Per-point bandwidths for rows of *X*.
-        sigmas_Y : ndarray of shape (m,) or None
+        sigmas_Y : Tensor of shape (m,) or None
             Per-point bandwidths for rows of *Y*.  If ``None``, uses
             *sigmas_X* (valid only when X is Y, i.e. the training kernel).
         symmetric : bool, default=False
@@ -96,48 +111,38 @@ class BaseKernel(abc.ABC):
 
         Returns
         -------
-        K : ndarray of shape (n, m)
+        K : Tensor of shape (n, m)
         """
+        device = X.device
+
         if sigmas_Y is None:
             sigmas_Y = sigmas_X
 
         n = X.shape[0]
 
         if self.P == 2:
-            XX = np.einsum('ij,ij->i', X, X)[:, None]   # (n, 1)
-            YY = np.einsum('ij,ij->i', Y, Y)[None, :]   # (1, m)
-            D_P = np.maximum(XX + YY - 2.0 * (X @ Y.T), 0.0)  # (n, m), clipped for numerics
+            XX = (X * X).sum(dim=1, keepdim=True)       # (n, 1)
+            YY = (Y * Y).sum(dim=1, keepdim=True).T     # (1, m)
+            D_P = torch.clamp(XX + YY - 2.0 * (X @ Y.T), min=0.0)
         else:
-            D = cdist(X, Y)
-            D_P = D ** self.P
+            D = torch.cdist(X, Y, p=2.0)
+            D_P = D.pow(self.P)
 
-        # ── Determine row sigmas ──────────────────────────────────
-        # sigmas_X is provided by the caller.  Two cases:
-        #   Symmetric (training):  len(sigmas_X) == n == m   → use directly
-        #   Asymmetric (predict):  len(sigmas_X) may equal m (training sigmas
-        #       were forwarded for both arguments).  When that happens the
-        #       query points don't have their own trained sigmas, so we
-        #       broadcast the training sigmas across each query row.
         if sigmas_X.shape[0] == n:
-            row_sigmas = sigmas_X                       # shape (n,)
+            row_sigmas = sigmas_X
         else:
-            # Query points have no trained sigma → use mean of training sigmas
-            # so the geometric mean still yields reasonable per-pair values.
-            row_sigmas = np.full(n, sigmas_Y.mean())    # shape (n,)
+            row_sigmas = sigmas_Y.mean().expand(n)
 
-        # col_sigmas always corresponds to Y (training) points
-        col_sigmas = sigmas_Y                           # shape (m,)
+        col_sigmas = sigmas_Y
 
-        # Geometric mean bandwidth σ_ij = √(σ_row_i · σ_col_j)
-        # Result shape: (n, m) — always matches D_P
-        sigma_matrix = np.sqrt(row_sigmas[:, None] * col_sigmas[None, :])
-        sigma_matrix = np.maximum(sigma_matrix, 1e-8)
+        sigma_matrix = torch.sqrt(row_sigmas.unsqueeze(1) * col_sigmas.unsqueeze(0))
+        sigma_matrix = torch.clamp(sigma_matrix, min=1e-8)
 
         K = self._evaluate(D_P, sigma_matrix)
 
         if symmetric:
-            np.fill_diagonal(K, 1.0)
-            K = K + self.lambda_reg * np.eye(n)
+            K.fill_diagonal_(1.0)
+            K = K + self.lambda_reg * torch.eye(n, device=device, dtype=K.dtype)
 
         return K
 
@@ -154,8 +159,8 @@ class GaussianKernel(BaseKernel):
     where :math:`\sigma_{ij} = \sqrt{\sigma_i \sigma_j}` (geometric mean).
     """
 
-    def _evaluate(self, D_P: np.ndarray, sigma_matrix: np.ndarray) -> np.ndarray:
-        return np.exp(-D_P / (2.0 * sigma_matrix ** 2))
+    def _evaluate(self, D_P: torch.Tensor, sigma_matrix: torch.Tensor) -> torch.Tensor:
+        return torch.exp(-D_P / (2.0 * sigma_matrix ** 2))
 
 
 class MultiquadricKernel(BaseKernel):
@@ -165,8 +170,8 @@ class MultiquadricKernel(BaseKernel):
         K(x_i, x_j) = \sqrt{1 + \left(\frac{\|x_i - x_j\|}{\sigma_{ij}}\right)^P}
     """
 
-    def _evaluate(self, D_P: np.ndarray, sigma_matrix: np.ndarray) -> np.ndarray:
-        return np.sqrt(1.0 + D_P / sigma_matrix ** 2)
+    def _evaluate(self, D_P: torch.Tensor, sigma_matrix: torch.Tensor) -> torch.Tensor:
+        return torch.sqrt(1.0 + D_P / sigma_matrix ** 2)
 
 
 class InverseMultiquadricKernel(BaseKernel):
@@ -176,8 +181,8 @@ class InverseMultiquadricKernel(BaseKernel):
         K(x_i, x_j) = \frac{1}{\sqrt{1 + \left(\frac{\|x_i - x_j\|}{\sigma_{ij}}\right)^P}}
     """
 
-    def _evaluate(self, D_P: np.ndarray, sigma_matrix: np.ndarray) -> np.ndarray:
-        return 1.0 / np.sqrt(1.0 + D_P / sigma_matrix ** 2)
+    def _evaluate(self, D_P: torch.Tensor, sigma_matrix: torch.Tensor) -> torch.Tensor:
+        return 1.0 / torch.sqrt(1.0 + D_P / sigma_matrix ** 2)
 
 
 class ThinPlateSplineKernel(BaseKernel):
@@ -190,10 +195,10 @@ class ThinPlateSplineKernel(BaseKernel):
     compatibility.
     """
 
-    def _evaluate(self, D_P: np.ndarray, sigma_matrix: np.ndarray) -> np.ndarray:
-        D = np.power(D_P, 1.0 / self.P)  # recover original distance
+    def _evaluate(self, D_P: torch.Tensor, sigma_matrix: torch.Tensor) -> torch.Tensor:
+        D = torch.pow(D_P, 1.0 / self.P)
         eps = 1e-12
-        return D ** 2 * np.log(D + eps)
+        return D ** 2 * torch.log(D + eps)
 
 
 # ---------------------------------------------------------------------------
@@ -209,29 +214,29 @@ _KERNEL_REGISTRY: dict[str, type[BaseKernel]] = {
 
 
 def build_kernel_matrix(
-    X: np.ndarray,
-    Y: np.ndarray,
-    sigmas_X: np.ndarray,
-    sigmas_Y: np.ndarray | None = None,
+    X: torch.Tensor,
+    Y: torch.Tensor,
+    sigmas_X: torch.Tensor,
+    sigmas_Y: torch.Tensor | None = None,
     *,
     kernel: str | BaseKernel = "gaussian",
     P: int = 2,
     lambda_reg: float = 1e-10,
     symmetric: bool = False,
-) -> np.ndarray:
+) -> torch.Tensor:
     """Build a kernel matrix between *X* and *Y*.
 
     This is the primary high-level entry point for kernel construction.
 
     Parameters
     ----------
-    X : ndarray of shape (n, d)
-    Y : ndarray of shape (m, d)
-    sigmas_X : ndarray of shape (n,)
+    X : Tensor of shape (n, d)
+    Y : Tensor of shape (m, d)
+    sigmas_X : Tensor of shape (n,)
         Per-point bandwidths for *X*.  During prediction this may be the
         training sigmas (shape ``(m,)``); the kernel will handle the
         mismatch gracefully.
-    sigmas_Y : ndarray of shape (m,) or None
+    sigmas_Y : Tensor of shape (m,) or None
         Per-point bandwidths for *Y*.  If ``None``, defaults to *sigmas_X*.
     kernel : str or BaseKernel instance, default="gaussian"
         Kernel function to use.
@@ -244,7 +249,7 @@ def build_kernel_matrix(
 
     Returns
     -------
-    K : ndarray of shape (n, m)
+    K : Tensor of shape (n, m)
     """
     if isinstance(kernel, str):
         kernel_name = kernel.lower().replace("-", "_").replace(" ", "_")
@@ -263,18 +268,18 @@ def build_kernel_matrix(
 
 
 def chunked_kernel_matmul(
-    X: np.ndarray,
-    Y: np.ndarray,
-    sigmas_X: np.ndarray,
-    sigmas_Y: np.ndarray,
-    weights: np.ndarray,
+    X: torch.Tensor,
+    Y: torch.Tensor,
+    sigmas_X: torch.Tensor,
+    sigmas_Y: torch.Tensor,
+    weights: torch.Tensor,
     *,
     kernel: str | BaseKernel = "gaussian",
     P: int = 2,
     lambda_reg: float = 1e-10,
     chunk_size: int = 500,
     show_progress: bool = False,
-) -> np.ndarray:
+) -> torch.Tensor:
     """Compute K(X, Y) @ weights using chunking to control memory usage.
 
     Instead of materializing the full (n_query, n_train) kernel matrix,
@@ -283,16 +288,16 @@ def chunked_kernel_matmul(
 
     Parameters
     ----------
-    X : ndarray of shape (n_query, d)
+    X : Tensor of shape (n_query, d)
         Query points.
-    Y : ndarray of shape (n_train, d)
+    Y : Tensor of shape (n_train, d)
         Training/center points.
-    sigmas_X : ndarray of shape (n_query,) or (n_train,)
+    sigmas_X : Tensor of shape (n_query,) or (n_train,)
         Per-point bandwidths for query. If shape doesn't match X, uses
         mean of sigmas_Y for all query points.
-    sigmas_Y : ndarray of shape (n_train,)
+    sigmas_Y : Tensor of shape (n_train,)
         Per-point bandwidths for training centers.
-    weights : ndarray of shape (n_classes, n_train) or (n_train,)
+    weights : Tensor of shape (n_classes, n_train) or (n_train,)
         Interpolation weights from training.
     kernel : str or BaseKernel instance, default="gaussian"
         Kernel function to use.
@@ -307,7 +312,7 @@ def chunked_kernel_matmul(
 
     Returns
     -------
-    result : ndarray of shape (n_query, n_classes) or (n_query,)
+    result : Tensor of shape (n_query, n_classes) or (n_query,)
         The result of K @ weights^T (if weights is 2D) or K @ weights.
     """
     # Build the kernel object
@@ -325,18 +330,20 @@ def chunked_kernel_matmul(
         raise TypeError(f"kernel must be str or BaseKernel, got {type(kernel)}")
 
     n_query = X.shape[0]
+    device = X.device
 
     # Handle weights shape
-    weights = np.asarray(weights)
+    if not isinstance(weights, torch.Tensor):
+        weights = torch.as_tensor(weights, dtype=torch.float64, device=device)
     if weights.ndim == 1:
-        weights = weights.reshape(1, -1)
+        weights = weights.unsqueeze(0)
         squeeze_output = True
     else:
         squeeze_output = False
     n_classes = weights.shape[0]
 
     # Pre-allocate output
-    result = np.zeros((n_query, n_classes), dtype=np.float64)
+    result = torch.zeros(n_query, n_classes, dtype=torch.float64, device=device)
 
     # Process in chunks
     n_chunks = (n_query + chunk_size - 1) // chunk_size
@@ -357,5 +364,5 @@ def chunked_kernel_matmul(
         result[start:end] = K_chunk @ weights.T
 
     if squeeze_output:
-        return result.squeeze(axis=1)
+        return result.squeeze(1)
     return result

@@ -1,5 +1,7 @@
 """
 General utility functions for the ERBF library.
+
+Uses PyTorch for GPU-accelerated computation where beneficial.
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 import numpy as np
+import torch
 
 
 @contextmanager

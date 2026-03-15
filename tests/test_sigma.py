@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from erbf.sigma import auto_select_k, compute_global_sigma, compute_local_sigmas
 
@@ -31,7 +32,7 @@ class TestComputeLocalSigmas:
     @pytest.fixture
     def data(self):
         rng = np.random.default_rng(42)
-        return rng.standard_normal((50, 3))
+        return torch.tensor(rng.standard_normal((50, 3)), dtype=torch.float64)
 
     def test_shape(self, data):
         sigmas = compute_local_sigmas(data)
@@ -39,12 +40,12 @@ class TestComputeLocalSigmas:
 
     def test_positive(self, data):
         sigmas = compute_local_sigmas(data)
-        assert np.all(sigmas > 0)
+        assert torch.all(sigmas > 0)
 
     def test_clipping(self, data):
         sigmas = compute_local_sigmas(data, min_sigma=1.0, max_sigma=5.0)
-        assert np.all(sigmas >= 1.0)
-        assert np.all(sigmas <= 5.0)
+        assert torch.all(sigmas >= 1.0)
+        assert torch.all(sigmas <= 5.0)
 
     def test_explicit_k(self, data):
         sigmas = compute_local_sigmas(data, k_neighbors=5)
@@ -53,7 +54,7 @@ class TestComputeLocalSigmas:
     def test_chunked_matches_unchunked(self, data):
         sigmas_small_chunk = compute_local_sigmas(data, k_neighbors=5, chunk_size=10)
         sigmas_large_chunk = compute_local_sigmas(data, k_neighbors=5, chunk_size=100)
-        np.testing.assert_allclose(sigmas_small_chunk, sigmas_large_chunk, atol=1e-12)
+        torch.testing.assert_close(sigmas_small_chunk, sigmas_large_chunk, atol=1e-12, rtol=0)
 
     def test_verbose(self, data, capsys):
         compute_local_sigmas(data, verbose=True)
@@ -65,7 +66,7 @@ class TestComputeGlobalSigma:
     @pytest.fixture
     def data(self):
         rng = np.random.default_rng(42)
-        return rng.standard_normal((30, 2))
+        return torch.tensor(rng.standard_normal((30, 2)), dtype=torch.float64)
 
     def test_median(self, data):
         sigma = compute_global_sigma(data, method="median")

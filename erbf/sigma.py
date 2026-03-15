@@ -4,6 +4,8 @@ Adaptive bandwidth (σ) computation for ERBF.
 This module provides functions for computing per-point bandwidths using k-NN
 distances, as well as global (constant) bandwidth estimation.
 
+Uses PyTorch for GPU-accelerated computation when CUDA is available.
+
 The key insight is that **larger k** values produce larger σ values which in
 turn yield better-conditioned kernel matrices, enabling stable exact
 interpolation.
@@ -18,8 +20,11 @@ captures local density) against stability (large k smooths the kernel).
 
 from __future__ import annotations
 
-import numpy as np
-from scipy.spatial.distance import cdist
+import math
+
+import torch
+
+from erbf.kernel import _default_device, _to_tensor
 
 try:
     from tqdm import tqdm
@@ -48,30 +53,32 @@ def auto_select_k(N: int, *, multiplier: float = 1.5, minimum: int = 10) -> int:
     -------
     k : int
     """
-    return max(minimum, int(np.sqrt(N) * multiplier))
+    return max(minimum, int(math.sqrt(N) * multiplier))
 
 
 def compute_local_sigmas(
-    X: np.ndarray,
+    X: torch.Tensor,
     k_neighbors: int | None = None,
     *,
     k_multiplier: float = 1.5,
     k_minimum: int = 10,
+    min_sigma: float | None = None,
+    max_sigma: float | None = None,
     metric: str = "euclidean",
     chunk_size: int = 500,
     verbose: bool = False,
     show_progress: bool = False,
-) -> np.ndarray:
+) -> torch.Tensor:
     """Compute per-point adaptive σ using k-NN mean distances.
 
     For each point *x_i* the bandwidth is the mean Euclidean distance to its
-    *k* nearest neighbours, clipped to ``[min_sigma, max_sigma]``.
+    *k* nearest neighbours, optionally clipped to ``[min_sigma, max_sigma]``.
 
     Uses chunking to keep memory usage constant regardless of N.
 
     Parameters
     ----------
-    X : ndarray of shape (N, d)
+    X : Tensor of shape (N, d)
         Data matrix.
     k_neighbors : int or None
         Number of neighbours.  If ``None``, automatically selected via
@@ -80,12 +87,12 @@ def compute_local_sigmas(
         Passed to :func:`auto_select_k` when *k_neighbors* is ``None``.
     k_minimum : int, default=10
         Passed to :func:`auto_select_k` when *k_neighbors* is ``None``.
-    min_sigma : float, default=0.5
+    min_sigma : float or None
         Floor for computed σ values.
-    max_sigma : float, default=20.0
+    max_sigma : float or None
         Ceiling for computed σ values.
     metric : str, default="euclidean"
-        Distance metric forwarded to ``scipy.spatial.distance.cdist``.
+        Distance metric (currently only "euclidean" is supported with torch).
     chunk_size : int, default=500
         Number of rows to process at a time. Controls memory usage.
     verbose : bool, default=False
@@ -95,15 +102,14 @@ def compute_local_sigmas(
 
     Returns
     -------
-    sigmas : ndarray of shape (N,)
+    sigmas : Tensor of shape (N,)
         Per-point bandwidth values.
     """
+    device = X.device
     N = X.shape[0]
 
     if k_neighbors is None:
         k_neighbors = auto_select_k(N, multiplier=k_multiplier, minimum=k_minimum)
-    # Clamp k to at most N-1 (all other points)
-    k_neighbors = k_neighbors
 
     if verbose:
         print(
@@ -111,7 +117,10 @@ def compute_local_sigmas(
             f"metric={metric}, chunk_size={chunk_size}"
         )
 
-    sigmas = np.zeros(N, dtype=np.float64)
+    sigmas = torch.zeros(N, dtype=torch.float64, device=device)
+
+    # Precompute ||x_j||^2 for all training points
+    YY = (X * X).sum(dim=1)  # (N,)
 
     # Process in chunks to keep memory constant
     n_chunks = (N + chunk_size - 1) // chunk_size
@@ -124,30 +133,38 @@ def compute_local_sigmas(
         end = min(start + chunk_size, N)
         X_chunk = X[start:end]
 
-        # Replace cdist with matmul-based squared distances, then sqrt
-        XX = np.einsum('ij,ij->i', X_chunk, X_chunk)[:, None]  # (chunk, 1)
-        YY = np.einsum('ij,ij->i', X, X)[None, :]              # (1, N)
-        D_chunk = np.sqrt(np.maximum(XX + YY - 2.0 * (X_chunk @ X.T), 0.0))
+        # Matmul-based squared distances, then sqrt
+        XX = (X_chunk * X_chunk).sum(dim=1, keepdim=True)  # (chunk, 1)
+        D_chunk = torch.sqrt(torch.clamp(XX + YY.unsqueeze(0) - 2.0 * (X_chunk @ X.T), min=0.0))
 
         for i, global_i in enumerate(range(start, end)):
-            row = D_chunk[i].copy()
-            row[global_i] = np.inf
-            sigmas[global_i] = np.mean(np.partition(row, k_neighbors)[:k_neighbors])
+            row = D_chunk[i].clone()
+            row[global_i] = float("inf")
+            # Get k smallest distances
+            topk_vals, _ = torch.topk(row, k_neighbors, largest=False)
+            sigmas[global_i] = topk_vals.mean()
 
+    if min_sigma is not None:
+        sigmas = torch.clamp(sigmas, min=min_sigma)
+    if max_sigma is not None:
+        sigmas = torch.clamp(sigmas, max=max_sigma)
 
     if verbose:
         print(
-            f"[sigma] σ range: [{sigmas.min():.4f}, {sigmas.max():.4f}], "
-            f"mean={sigmas.mean():.4f}"
+            f"[sigma] σ range: [{sigmas.min().item():.4f}, {sigmas.max().item():.4f}], "
+            f"mean={sigmas.mean().item():.4f}"
         )
-    
-    if np.isinf(sigmas).any():
-        raise ValueError("Some σ values are infinite. This may indicate that k_neighbors is too large for the dataset size.")
+
+    if torch.isinf(sigmas).any():
+        raise ValueError(
+            "Some σ values are infinite. This may indicate that "
+            "k_neighbors is too large for the dataset size."
+        )
     return sigmas
 
 
 def compute_global_sigma(
-    X: np.ndarray,
+    X: torch.Tensor,
     *,
     method: str = "median",
     metric: str = "euclidean",
@@ -160,7 +177,7 @@ def compute_global_sigma(
 
     Parameters
     ----------
-    X : ndarray of shape (N, d)
+    X : Tensor of shape (N, d)
     method : {"median", "mean", "max"}
         Aggregation applied to pairwise distances.
     metric : str, default="euclidean"
@@ -177,22 +194,19 @@ def compute_global_sigma(
 
     # For small datasets, use the simple approach
     if N <= chunk_size:
-        D = cdist(X, X, metric=metric)
-        np.fill_diagonal(D, np.nan)
+        D = torch.cdist(X, X, p=2.0)
+        D.fill_diagonal_(float("nan"))
         if method == "median":
-            return float(np.nanmedian(D))
+            return float(torch.nanmedian(D).item())
         elif method == "mean":
-            return float(np.nanmean(D))
+            return float(torch.nanmean(D).item())
         elif method == "max":
-            return float(np.nanmax(D))
+            D.fill_diagonal_(0.0)
+            return float(D.max().item())
         else:
             raise ValueError(f"Unknown method '{method}'; use 'median', 'mean', or 'max'")
 
     # For large datasets, use chunked computation
-    # For median: collect all distances (still memory-heavy, but unavoidable for exact median)
-    # For mean: use running stats
-    # For max: track running max
-
     if method == "max":
         running_max = 0.0
         n_chunks = (N + chunk_size - 1) // chunk_size
@@ -203,13 +217,13 @@ def compute_global_sigma(
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
-            D_chunk = cdist(X[start:end], X, metric=metric)
+            D_chunk = torch.cdist(X[start:end], X, p=2.0)
             # Exclude self-distances
             for i, global_i in enumerate(range(start, end)):
                 D_chunk[i, global_i] = 0.0
-            chunk_max = D_chunk.max()
+            chunk_max = float(D_chunk.max().item())
             running_max = max(running_max, chunk_max)
-        return float(running_max)
+        return running_max
 
     elif method == "mean":
         running_sum = 0.0
@@ -222,17 +236,16 @@ def compute_global_sigma(
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
-            D_chunk = cdist(X[start:end], X, metric=metric)
+            D_chunk = torch.cdist(X[start:end], X, p=2.0)
             # Exclude self-distances
             for i, global_i in enumerate(range(start, end)):
-                D_chunk[i, global_i] = np.nan
-            running_sum += np.nansum(D_chunk)
-            count += np.sum(~np.isnan(D_chunk))
-        return float(running_sum / count)
+                D_chunk[i, global_i] = float("nan")
+            valid_mask = ~torch.isnan(D_chunk)
+            running_sum += float(D_chunk[valid_mask].sum().item())
+            count += int(valid_mask.sum().item())
+        return running_sum / count
 
     elif method == "median":
-        # For median, we need to use reservoir sampling or approximate methods
-        # For now, compute chunked and collect upper triangle values
         all_dists = []
         n_chunks = (N + chunk_size - 1) // chunk_size
         chunk_iter = range(n_chunks)
@@ -242,15 +255,14 @@ def compute_global_sigma(
         for chunk_idx in chunk_iter:
             start = chunk_idx * chunk_size
             end = min(start + chunk_size, N)
-            # Only compute upper triangle to avoid duplicates
-            D_chunk = cdist(X[start:end], X[start:], metric=metric)
+            D_chunk = torch.cdist(X[start:end], X[start:], p=2.0)
             for i, global_i in enumerate(range(start, end)):
-                # Set self and already-counted pairs to nan
                 local_col_start = global_i - start
-                D_chunk[i, :local_col_start + 1] = np.nan
-            valid = D_chunk[~np.isnan(D_chunk)]
-            all_dists.extend(valid.tolist())
-        return float(np.median(all_dists))
+                D_chunk[i, : local_col_start + 1] = float("nan")
+            valid = D_chunk[~torch.isnan(D_chunk)]
+            all_dists.append(valid.cpu())
+        all_dists_t = torch.cat(all_dists)
+        return float(torch.median(all_dists_t).item())
 
     else:
         raise ValueError(f"Unknown method '{method}'; use 'median', 'mean', or 'max'")
